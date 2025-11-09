@@ -1,5 +1,6 @@
 import argparse
-
+from internal.hybrid_search import HybridSearch, normalize_scores
+from internal.dataset import load_movies
 
 def main():
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
@@ -8,6 +9,11 @@ def main():
     norm_parser = subparser.add_parser("normalize", help="normalize a list of search scores")
     norm_parser.add_argument("scores", nargs="*", help="the list of scores to normalize")
 
+    weighted_search_parser = subparser.add_parser("weighted-search", help="perform a weighted hybrid search")
+    weighted_search_parser.add_argument("query", type=str, help="the search terms to evaluate")
+    weighted_search_parser.add_argument("--alpha", dest="alpha", type=float, nargs="?", default=5, help="how much to bias the search towards either keyword or semantic search. 0 represents full semantic weight, and 1 represents full keyword weight")
+    weighted_search_parser.add_argument("--limit", dest="limit", type=int, nargs="?", default=5, help="the maximum number of results to return")
+
     args = parser.parse_args()
     
     match args.command:
@@ -15,23 +21,24 @@ def main():
             norm_list = normalize_scores(args.scores)
             for score in norm_list:
                 print(f"* {score:.4f}")
+        case "weighted-search":
+            movies_docs = load_movies().get("movies")
+            searcher = HybridSearch(movies_docs)
+            results = searcher.weighted_search(args.query, args.alpha, args.limit)
+            for idx, id in enumerate(results):
+                result = results[id]
+                print(f"\n{idx+1}. {result["document"]["title"]}")
+                print(f"Hybrid Score: {result["hybrid_score"]:.3f}")
+                print(f"BM25: {result["keyword_score"]:.3f}, Semantic: {result["semantic_score"]:.3f}")
+                desc = result["document"]["description"]
+                if len(desc) > 100:
+                    desc = desc[:100] + "..."
+                print(desc)
         case _:
             parser.print_help()
 
 
-def normalize_scores(scores: list) -> list:
-    if len(scores) == 0:
-        return []
-    low = float(min(scores))
-    high = float(max(scores))
-    if high == low:
-        return list(map(lambda _: 1, scores))
-    norm_list = []
-    for score in scores:
-        score = float(score)
-        normalized = (score - low) / (high - low)
-        norm_list.append(normalized)
-    return norm_list
+
 
 if __name__ == "__main__":
     main()
