@@ -14,6 +14,10 @@ def main():
     weighted_search_parser.add_argument("--alpha", dest="alpha", type=float, nargs="?", default=5, help="how much to bias the search towards either keyword or semantic search. 0 represents full semantic weight, and 1 represents full keyword weight")
     weighted_search_parser.add_argument("--limit", dest="limit", type=int, nargs="?", default=5, help="the maximum number of results to return")
 
+    rrf_search_parser = subparser.add_parser("rrf-search", help="peform a search based on reciporical rank fusion")
+    rrf_search_parser.add_argument("query", type=str, help="the search terms to evaluate")
+    rrf_search_parser.add_argument("--k", dest="k", type=int, nargs="?", default=60, help="how much to bias towards a high rank. lower k values weigh rank more highly")
+    rrf_search_parser.add_argument("--limit", dest="limit", type=int, default=5, help="the maximum number of results to return")
     args = parser.parse_args()
     
     match args.command:
@@ -30,6 +34,19 @@ def main():
                 print(f"\n{idx+1}. {result["document"]["title"]}")
                 print(f"Hybrid Score: {result["hybrid_score"]:.3f}")
                 print(f"BM25: {result["keyword_score"]:.3f}, Semantic: {result["semantic_score"]:.3f}")
+                desc = result["document"]["description"]
+                if len(desc) > 100:
+                    desc = desc[:100] + "..."
+                print(desc)
+        case "rrf-search":
+            movies_docs = load_movies().get("movies")
+            searcher = HybridSearch(movies_docs)
+            results = searcher.rrf_search(args.query, args.k, args.limit)
+            for idx, id in enumerate(results):
+                result = results[id]
+                print(f"\n{idx+1}. {result["document"]["title"]}")
+                print(f"RRF Score: {result["rrf_score"]:.3f}")
+                print(f"BM25 Rank: {result.get("keyword_rank",-1):.3f}, Semantic: {result.get("semantic_rank",-1):.3f}")
                 desc = result["document"]["description"]
                 if len(desc) > 100:
                     desc = desc[:100] + "..."

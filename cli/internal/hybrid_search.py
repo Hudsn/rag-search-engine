@@ -79,12 +79,49 @@ class HybridSearch():
         
 
     def rrf_search(self, query: str, k: float, limit: int=100):
-        raise NotImplementedError("RRF hybrid search is not implemented yet.")
+        # raise NotImplementedError("RRF hybrid search is not implemented yet.")
+        score_dict = {}
+        bm_25_results = self._bm25_search(query, limit=limit*500)
+        for idx, bm_25_result in enumerate(bm_25_results):
+            doc_id, _, _ = bm_25_result
+            rank = idx + 1
+            score_dict[doc_id] = {
+                "id": doc_id,
+                "document": self.idx.docmap.get(doc_id),
+                "keyword_rank": rank,
+                "keyword_rrf": rrf_score(rank, k)
+            }
+        
+        sem_results = self.semantic_search.search_chunks(query, limit=limit*500)
+        for idx, sem_result in enumerate(sem_results):
+            rank = idx+1
+            score = rrf_score(rank, k)
+            doc_id = sem_result["id"]
+            if doc_id in score_dict:
+                score_dict[doc_id]["semantic_rank"] = rank
+                score_dict[doc_id]["semantic_rrf"] = score
+                score_dict[doc_id]["rrf_score"] = score_dict[doc_id]["semantic_rrf"] + score_dict[doc_id]["keyword_rrf"]
+            else:
+                score_dict[doc_id] = {
+                "id": doc_id,
+                "document": self.idx.docmap.get(doc_id),
+                "semantic_rank": rank,
+                "semantic_rrf": score,
+                "rrf_score": score,
+            }
+        score_dict = dict(sorted(score_dict.items(),key=lambda entry: entry[1]["rrf_score"], reverse=True))
+        if len(score_dict) > limit:
+            score_dict = dict(list(score_dict.items())[:limit])
+        return score_dict
+
+        
     
 
 def hybrid_score(bm25_score, semantic_score, alpha=0.5):
         return alpha * bm25_score + (1 - alpha) * semantic_score
 
+def rrf_score(rank, k=60):
+    return 1 / (k + rank)
 
 def normalize_scores(scores: list) -> list:
     if len(scores) == 0:
