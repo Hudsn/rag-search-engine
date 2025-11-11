@@ -89,7 +89,8 @@ class HybridSearch():
                 "id": doc_id,
                 "document": self.idx.docmap.get(doc_id),
                 "keyword_rank": rank,
-                "keyword_rrf": rrf_score(rank, k)
+                "keyword_rrf": rrf_score(rank, k),
+                "rrf_score": rrf_score(rank, k)
             }
         
         sem_results = self.semantic_search.search_chunks(query, limit=limit*500)

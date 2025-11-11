@@ -1,6 +1,7 @@
 import argparse
 from internal.hybrid_search import HybridSearch, normalize_scores
 from internal.dataset import load_movies
+from internal.llm import make_client, gen_content
 
 def main():
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
@@ -18,6 +19,7 @@ def main():
     rrf_search_parser.add_argument("query", type=str, help="the search terms to evaluate")
     rrf_search_parser.add_argument("--k", dest="k", type=int, nargs="?", default=60, help="how much to bias towards a high rank. lower k values weigh rank more highly")
     rrf_search_parser.add_argument("--limit", dest="limit", type=int, default=5, help="the maximum number of results to return")
+    rrf_search_parser.add_argument("--enhance", dest="enhance", type=str, choices=["spell"], help="Query enhancement method")
     args = parser.parse_args()
     
     match args.command:
@@ -41,7 +43,12 @@ def main():
         case "rrf-search":
             movies_docs = load_movies().get("movies")
             searcher = HybridSearch(movies_docs)
-            results = searcher.rrf_search(args.query, args.k, args.limit)
+            query_text = args.query
+            if args.enhance == "spell":
+                enh_method = "spell"
+                query_text = enhance_query_spell(query_text)
+                print(f"Enhanced query ({enh_method}): '{args.query}' -> '{query_text}'\n")
+            results = searcher.rrf_search(query_text, args.k, args.limit)
             for idx, id in enumerate(results):
                 result = results[id]
                 print(f"\n{idx+1}. {result["document"]["title"]}")
@@ -54,6 +61,18 @@ def main():
         case _:
             parser.print_help()
 
+def enhance_query_spell(query: str) -> str:
+    prooompt = f"""Fix any spelling errors in this movie search query.
+
+Only correct obvious typos. Don't change correctly spelled words.
+
+Query: "{query}"
+
+If no errors, return the original query.
+Corrected:"""
+    c = make_client()
+    return gen_content(c, prooompt)
+    
 
 
 
