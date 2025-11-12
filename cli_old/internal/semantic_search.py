@@ -112,41 +112,37 @@ class ChunkedSemanticSearch(SemanticSearch):
         return self.chunk_embeddings
     
     def search_chunks(self, query: str, limit: int=10):
-        query_embedding = super().generate_embedding(query)
+        query_embedding = self.generate_embedding(query)
         chunk_scores: list[dict] = []
         for idx, chunk_embed in enumerate(self.chunk_embeddings):
             csim = cosine_similarity(query_embedding, chunk_embed)
             to_add = {
-                "absolute_idx": idx,
-                "chunk_idx": self.chunk_metadata[idx].get("chunk_idx"),
+                # "absolute_idx": idx,
+                # "chunk_idx": self.chunk_metadata[idx].get("chunk_idx"),
+                "chunk_idx": idx,
                 "movie_idx": self.chunk_metadata[idx].get("movie_idx"),
                 "score": csim
             }
-            if to_add["chunk_idx"] is None or to_add["movie_idx"] is None:
-                continue
             chunk_scores.append(to_add)
         movies_scores: dict[int, dict] = {}
+
         for chunk_enriched in chunk_scores:
             movie = self.documents[chunk_enriched.get("movie_idx")]
             m_id = movie.get("id")
             if m_id not in movies_scores or movies_scores.get(m_id).get("score") < chunk_enriched.get("score"):
                 movies_scores[m_id] = chunk_enriched
         ordered_scores: list[tuple[int, dict]] = list(sorted(movies_scores.items(), key=lambda entry: entry[1].get("score"), reverse=True))
-        
-        if len(ordered_scores) > limit:
-            ordered_scores = ordered_scores[:limit]
         ret: list[dict] = []
-        for m_id, score_dict in ordered_scores:
+        for m_id, score_dict in ordered_scores[:limit]:
         
             to_add = {
                 "id": m_id,
-                "title": self.document_map.get(m_id).get("title", "::NO TITLE FOUND::"),
-                "document": self.document_map.get(m_id).get("description", "::NO DESC FOUND::")[:100],
-                "score": round(score_dict.get("score"), 4),
-                "metadata": self.chunk_metadata[score_dict.get("absolute_idx")] or {}
+                "title": self.document_map[m_id]["title"],
+                "document": self.document_map[m_id]["description"],
+                "score": round(score_dict["score"], 4),
+                "metadata": self.chunk_metadata[score_dict.get("chunk_idx")] or {}
             }
             ret.append(to_add)
-          
         return ret
 
 

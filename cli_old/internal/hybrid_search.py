@@ -20,13 +20,11 @@ class HybridSearch():
         return self.idx.bm25_search(query, limit)
     
     def weighted_search(self, query: str, alpha: float, limit: int=5) -> dict:
-        # raise NotImplementedError("Weighted hybrid search is not implemented yet.")
         norm_dict: dict[int, dict] = {}
 
 
         bm25_results = self._bm25_search(query, limit=limit*500)
 
-        print("LEN IDX MAP:", len(self.idx.docmap), "\n\n")
         bm_25_scores: list[float] = [] 
         bm_25_doc_ids: list[int] = [] 
         for entry in bm25_results:
@@ -79,44 +77,97 @@ class HybridSearch():
         
 
     def rrf_search(self, query: str, k: float, limit: int=100):
-        # raise NotImplementedError("RRF hybrid search is not implemented yet.")
-        score_dict = {}
+        score_dict = {} # id -> scores
         bm_25_results = self._bm25_search(query, limit=limit*500)
         for idx, bm_25_result in enumerate(bm_25_results):
-            doc_id, _, _ = bm_25_result
+            _, _, doc = bm_25_result
             rank = idx + 1
-            score_dict[doc_id] = {
-                "id": doc_id,
-                "document": self.idx.docmap.get(doc_id),
-                "keyword_rank": rank,
-                "keyword_rrf": rrf_score(rank, k),
-                "rrf_score": rrf_score(rank, k)
-            }
+            score = rrf_score(rank, k)
+            doc_id = doc["id"]
+            if doc_id not in score_dict:
+                score_dict[doc_id] = {
+                    "id": doc_id,
+                    "title": doc["title"],
+                    "document": doc["description"],
+                    "rrf_score": 0.0,
+                    "keyword_rank": None,
+                    "semantic_rank": None,
+                }
+            if score_dict[doc_id]["keyword_rank"] is None:
+                score_dict[doc_id]["keyword_rank"] = rank
+                score_dict[doc_id]["rrf_score"] += score
         
         sem_results = self.semantic_search.search_chunks(query, limit=limit*500)
         for idx, sem_result in enumerate(sem_results):
-            rank = idx+1
+            rank = idx + 1
             score = rrf_score(rank, k)
             doc_id = sem_result["id"]
-            if doc_id in score_dict:
+            if doc_id not in score_dict:
+                 score_dict[doc_id] = {
+                    "id": doc_id,
+                    "title": doc["title"],
+                    "document": doc["description"],
+                    "rrf_score": 0.0,
+                    "keyword_rank": None,
+                    "semantic_rank": None,
+                }
+            if score_dict[doc_id]["semantic_rank"] is None:
                 score_dict[doc_id]["semantic_rank"] = rank
-                score_dict[doc_id]["semantic_rrf"] = score
-                score_dict[doc_id]["rrf_score"] = score_dict[doc_id]["semantic_rrf"] + score_dict[doc_id]["keyword_rrf"]
-            else:
-                score_dict[doc_id] = {
-                "id": doc_id,
-                "document": self.idx.docmap.get(doc_id),
-                "semantic_rank": rank,
-                "semantic_rrf": score,
-                "rrf_score": score,
-            }
+                score_dict[doc_id]["rrf_score"] += score
+
         score_dict = dict(sorted(score_dict.items(),key=lambda entry: entry[1]["rrf_score"], reverse=True))
-        if len(score_dict) > limit:
-            score_dict = dict(list(score_dict.items())[:limit])
-        return score_dict
+        return dict(list(score_dict.items())[:limit])
 
         
-    
+
+# def reciprocal_rank_fusion(
+#     bm25_results: list[dict], semantic_results: list[dict], k: int = RRF_K
+# ) -> list[dict]:
+#     rrf_scores = {}
+
+#     for rank, result in enumerate(bm25_results, start=1):
+#         doc_id = result["id"]
+#         if doc_id not in rrf_scores:
+#             rrf_scores[doc_id] = {
+#                 "title": result["title"],
+#                 "document": result["document"],
+#                 "rrf_score": 0.0,
+#                 "bm25_rank": None,
+#                 "semantic_rank": None,
+#             }
+#         if rrf_scores[doc_id]["bm25_rank"] is None:
+#             rrf_scores[doc_id]["bm25_rank"] = rank
+#             rrf_scores[doc_id]["rrf_score"] += rrf_score(rank, k)
+
+#     for rank, result in enumerate(semantic_results, start=1):
+#         doc_id = result["id"]
+#         if doc_id not in rrf_scores:
+#             rrf_scores[doc_id] = {
+#                 "title": result["title"],
+#                 "document": result["document"],
+#                 "rrf_score": 0.0,
+#                 "bm25_rank": None,
+#                 "semantic_rank": None,
+#             }
+#         if rrf_scores[doc_id]["semantic_rank"] is None:
+#             rrf_scores[doc_id]["semantic_rank"] = rank
+#             rrf_scores[doc_id]["rrf_score"] += rrf_score(rank, k)
+
+#     rrf_results = []
+#     for doc_id, data in rrf_scores.items():
+#         result = format_search_result(
+#             doc_id=doc_id,
+#             title=data["title"],
+#             document=data["document"],
+#             score=data["rrf_score"],
+#             rrf_score=data["rrf_score"],
+#             bm25_rank=data["bm25_rank"],
+#             semantic_rank=data["semantic_rank"],
+#         )
+#         rrf_results.append(result)
+
+#     return sorted(rrf_results, key=lambda x: x["score"], reverse=True)
+
 
 def hybrid_score(bm25_score, semantic_score, alpha=0.5):
         return alpha * bm25_score + (1 - alpha) * semantic_score

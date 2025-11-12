@@ -15,9 +15,9 @@ CACHE_DOCLEN = os.path.join("cache", "doc_lengths.pkl")
 class InvertedIndex:
     _stemmer = PorterStemmer()
     def __init__(self):
-        self.index: dict[str, set[int]] = {}
+        self.index = collections.defaultdict(set)
         self.docmap: dict[int, dict] = {}
-        self.term_frequencies: dict[int, collections.Counter] = {}
+        self.term_frequencies = collections.defaultdict(collections.Counter)
         self.doc_lengths: dict[int, int] = {}
 
     def _get_avg_doc_length(self) -> float:
@@ -25,22 +25,24 @@ class InvertedIndex:
             raise ValueError("index has empty document length store. try rebuilding the index")
         sum = 0
         for id in self.doc_lengths:
-            sum += self.doc_lengths.get(id, 0)
+            sum += self.doc_lengths.get(id)
         return sum / len(self.doc_lengths)
 
     def _add_document(self, doc_id: int, text: str):
-        toks = tokenize_text(text, self._stemmer, get_stopword_list())
-        for tok in toks:
+        toks = self.tokenize(text)
+        for tok in set(toks):
             # index
-            if tok in self.index:
-                self.index[tok].add(doc_id)
-            else:
-                self.index[tok] = {doc_id}
+            self.index[tok].add(doc_id)
+            # if tok in self.index:
+                # self.index[tok].add(doc_id)
+            # else:
+            #     self.index[tok] = {doc_id}
             
             # frequencies
-            if doc_id not in self.term_frequencies:
-                self.term_frequencies[doc_id] = collections.Counter()
-            self.term_frequencies[doc_id][tok] += 1
+        self.term_frequencies[doc_id].update(toks)
+            # if doc_id not in self.term_frequencies:
+                # self.term_frequencies[doc_id] = collections.Counter()
+            # self.term_frequencies[doc_id][tok] += 1
 
         # doc_length
         self.doc_lengths[doc_id] = len(toks)
@@ -52,14 +54,21 @@ class InvertedIndex:
         return sorted(list(doc_ids))
     
     def get_tf(self, doc_id: int, term: str) -> int:
-        counter = self.term_frequencies.get(doc_id)
-        if counter == None:
-            return 0
-        term_toks = tokenize_text(term, self._stemmer, get_stopword_list())
-        if len(term_toks) > 1:
+        tokens = self.tokenize(term)
+        if len(tokens) != 1:
             raise ValueError("term must be a single token")
-        term = term_toks[0]
-        return counter.get(term.lower(), 0)
+        token = tokens[0]
+        return self.term_frequencies[doc_id][token]
+    
+
+        # counter = self.term_frequencies.get(doc_id)
+        # if counter == None:
+        #     return 0
+        # term_toks = tokenize_text(term, self._stemmer, get_stopword_list())
+        # if len(term_toks) > 1:
+        #     raise ValueError("term must be a single token")
+        # term = term_toks[0]
+        # return counter.get(term.lower(), 0)
     
     def get_idf(self, term: str) -> float:
         tokens = self.tokenize(term)
@@ -85,20 +94,37 @@ class InvertedIndex:
             raise ValueError("term must be a single token")
         term = tokens[0]
         total_count = len(self.docmap)
-        terms_doc_count = len(self.get_documents(term))
+        
+        terms_doc_count = len(self.index[term])
         no_terms_doc_count = total_count - terms_doc_count
         return math.log((no_terms_doc_count + 0.5) / (terms_doc_count + 0.5) + 1)
 
     def get_bm25_tf(self, doc_id: int, term: str, k1=BM25_K1, b=BM25_B) -> int:
-        tokens = self.tokenize(term)
-        if len(tokens) != 1:
-            raise ValueError("term must be a single token")
-        term = tokens[0]
+        # tokens = self.tokenize(term)
+        # if len(tokens) != 1:
+        #     raise ValueError("term must be a single token")
+        # term = tokens[0]
         tf_raw = self.get_tf(doc_id, term)
         doc_length = self.doc_lengths.get(doc_id, 0)
         avg_doc_length = self._get_avg_doc_length()
-        length_norm = 1 - b + b * (doc_length / avg_doc_length)
+        if avg_doc_length > 0:
+            length_norm = 1 - b + b * (doc_length / avg_doc_length)
+        else:
+            length_norm = 1
         return (tf_raw * (k1 + 1) / (tf_raw + k1 * length_norm))
+    
+    #  def get_bm25_tf(
+    #     self, doc_id: int, term: str, k1: float = BM25_K1, b: float = BM25_B
+    # ) -> float:
+    #     
+    #      tf = self.get_tf(doc_id, term)
+    #     doc_length = self.doc_lengths.get(doc_id, 0)
+    #     avg_doc_length = self.__get_avg_doc_length()
+    #     if avg_doc_length > 0:
+    #         length_norm = 1 - b + b * (doc_length / avg_doc_length)
+    #     else:
+    #         length_norm = 1
+    #     return (tf * (k1 + 1)) / (tf + k1 * length_norm)
     
     def get_bm25(self, doc_id: int, term: str) -> float:
         tf = self.get_bm25_tf(doc_id, term)
@@ -109,15 +135,10 @@ class InvertedIndex:
         tokens = self.tokenize(query)
         scores: dict[int, float] = {}
         for doc_id in self.docmap:
-            doc = self.docmap.get(doc_id)
-            if doc == None:
-                continue
+            score = 0.0
             for tok in tokens:
-                tok_score = self.get_bm25(doc_id, tok)
-                if doc_id in scores:
-                    scores[doc_id] += tok_score
-                else:
-                    scores[doc_id] = tok_score
+                score += self.get_bm25(doc_id, tok)
+            scores[doc_id] = score
         
         desc_scores = dict(sorted(scores.items(), key=lambda entry: entry[1], reverse=True))
         ret = []
