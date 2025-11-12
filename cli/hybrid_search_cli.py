@@ -130,8 +130,6 @@ def main() -> None:
                 print()
             if result["evaluations"]:
                 for idx, eval in enumerate(result["evaluations"]):
-                    # print(eval)
-                    # break
                     print(f"{idx+1}. {eval["title"]}: {eval["judge_score"]}/3")
             
         case _:
